@@ -1,7 +1,7 @@
 local M = {}
 
 local function get_data_dir()
-  return vim.fn.stdpath("data") .. "/neovim/terminals/"
+  return vim.fn.stdpath("data") .. "/term/"
 end
 
 -- ======================
@@ -11,7 +11,7 @@ function M.save()
   local buf = vim.api.nvim_get_current_buf()
 
   if vim.bo.buftype ~= "terminal" then
-    print("Not a terminal buffer")
+    vim.notify("Not a terminal buffer", vim.log.levels.WARN)
     return
   end
 
@@ -19,14 +19,14 @@ function M.save()
   local lines = {}
 
   for i = 1, line_count do
-    local l = vim.api.nvim_buf_get_lines(buf, i - 1, i, false)[1]
-    if l and l:match("%S") then
+    local l = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    if l then
       table.insert(lines, l)
     end
   end
 
   if #lines == 0 then
-    print("No terminal content to save")
+    vim.notify("No terminal content to save", vim.log.levels.WARN)
     return
   end
 
@@ -36,10 +36,16 @@ function M.save()
   local id = "term_" .. os.time() .. "_" .. math.random(1000,9999)
   local path = dir .. id .. ".mpack"
 
+
+  local name = vim.api.nvim_buf_get_name(buf)
+
   local data = {
     version = 1,
     id = id,
+    uri = name,
     cwd = vim.fn.getcwd(),
+    cols = vim.api.nvim_win_get_width(0),
+    rows = vim.api.nvim_win_get_height(0),
     timestamp = os.time(),
     lines = lines,
   }
@@ -48,14 +54,14 @@ function M.save()
 
   local file = io.open(path, "wb")
   if not file then
-    print("Failed to save")
+    vim.notify("Failed to save", vim.log.levels.ERROR)
     return
   end
 
   file:write(packed)
   file:close()
 
-  print("Saved to: " .. path)
+  vim.notify("Saved to: " .. path, vim.log.levels.INFO)
 end
 
 -- ======================
@@ -103,7 +109,7 @@ function M.list()
   end
 
   if #display == 0 then
-    print("No valid terminal sessions found")
+    vim.notify("No valid terminal sessions found", vim.log.levels.WARN)
     return
   end
 
@@ -121,34 +127,32 @@ function M.list()
     local filename = map[line]
 
     if not filename then
-      print("Invalid selection")
+      vim.notify("Invalid selection", vim.log.levels.WARN)
       return
     end
     vim.cmd("bd!")
     M.restore_terminal(filename)
   end, { buffer = true })
 
-  print("Select a session and press ENTER")
+  vim.notify("Select a session and press ENTER", vim.log.levels.INFO)
 end
 
 
 -- ======================
 -- REPLAY TERMINAL OUTPUT
 -- ======================
-function M.restore_terminal(filename, delay)
+function M.restore_terminal(filename)
   if not filename or not filename:match("^term_%d+") then
-    print("Invalid filename")
+    vim.notify("Invalid filename", vim.log.levels.ERROR)
     return
   end
-
-  delay = delay or 50
 
   local dir = get_data_dir()
   local path = dir .. filename .. ".mpack"
 
   local file = io.open(path, "rb")
   if not file then
-    print("File not found: " .. path)
+    vim.notify("File not found: " .. path, vim.log.levels.ERROR)
     return
   end
 
@@ -157,44 +161,33 @@ function M.restore_terminal(filename, delay)
 
   local ok, data = pcall(vim.mpack.decode, content)
   if not ok or type(data) ~= "table" or type(data.lines) ~= "table" then
-    print("Invalid file")
+    vim.notify("Invalid session file", vim.log.levels.ERROR)
     return
   end
 
-  vim.cmd("new")
+  -- Create a buffer and open a REAL pseudo-terminal (no process attached)
+  local buf = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_set_current_buf(buf)
 
-  vim.bo.buftype = "nofile"
-  vim.bo.bufhidden = "wipe"
-  vim.bo.swapfile = false
+  -- THIS IS THE KEY: nvim_open_term() creates a real terminal buffer
+  -- with a libvterm instance. Data fed via nvim_chan_send() flows through
+  -- libvterm and produces REAL scrollback — not just buffer lines.
+  local chan = vim.api.nvim_open_term(buf, {})
 
-  vim.api.nvim_buf_set_lines(0, 0, -1, false, {})
+  -- Feed saved lines as terminal output.
+  -- Lines that scroll off the visible area become real scrollback.
+  local output = table.concat(data.lines, "\r\n")
+  vim.api.nvim_chan_send(chan, output)
 
-  local i = 1
-  local total = #data.lines
-  local stopped = false
+  -- Mark as restored so user knows this isn't a live process
+  vim.api.nvim_chan_send(chan, "\r\n\027[90m[Restored from session]\027[0m\r\n")
 
-  vim.keymap.set("n", "q", function()
-    stopped = true
-  end, { buffer = true })
-
-  local function play()
-    if stopped then
-      print("Replay stopped")
-      return
-    end
-
-    if i > total then
-      print("Replay finished")
-      return
-    end
-
-    vim.api.nvim_buf_set_lines(0, -1, -1, false, { data.lines[i] })
-    vim.cmd("normal! G")
-
-    i = i + 1
-    vim.defer_fn(play, delay)
+  -- Set buffer name to original URI if available
+  if data.uri then
+    pcall(vim.api.nvim_buf_set_name, buf, data.uri .. "#restored")
   end
 
-  play()
+  vim.notify("Terminal restored (real scrollback) from: " .. path)
+  return buf, chan
 end
 return M
