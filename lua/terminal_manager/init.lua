@@ -8,7 +8,12 @@ end
 -- SAVE TERMINAL OUTPUT
 -- ======================
 function M.save()
-  local buf = vim.api.nvim_get_current_buf()
+
+  -- Support both :TerminalSave (no arg) and autocmd (buf passed)
+  if type(bufnr) == "table" then
+    bufnr = nil  -- Called from user command, opts table passed
+  end
+  local buf = bufnr or vim.api.nvim_get_current_buf()
 
   if vim.bo.buftype ~= "terminal" then
     vim.notify("Not a terminal buffer", vim.log.levels.WARN)
@@ -129,6 +134,20 @@ function M.list()
   vim.notify("Select a session and press ENTER", vim.log.levels.INFO)
 end
 
+-- ======================
+-- SAVE ALL TERMINAL BUFFERS
+-- ======================
+function M.save_all()
+  local saved = 0
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf)
+      and vim.bo[buf].buftype == "terminal" then
+      M.save(buf)
+      saved = saved + 1
+    end
+  end
+  vim.notify(saved .. " terminal(s) saved", vim.log.levels.INFO)
+end
 
 -- ======================
 -- RESTORE INTO A REAL TERMINAL BUFFER
@@ -182,4 +201,60 @@ function M.restore_terminal(filename)
   vim.notify("Terminal restored (real scrollback) from: " .. path)
   return buf, chan
 end
+
+-- ==========================================
+-- RESTORE ALL SAVED TERMINAL SESSIONS
+-- ==========================================
+function M.restore_all()
+  local dir = get_data_dir()
+  if vim.fn.isdirectory(dir) == 0 then
+    return
+  end
+
+  local files = vim.fn.readdir(dir)
+  local restored = 0
+
+  for _, file in ipairs(files) do
+    if file:match("^term_%d+_%d+%.mpack$") then
+      local id = file:gsub("%.mpack$", "")
+      M.restore_terminal(id)
+      restored = restored + 1
+    end
+  end
+
+  if restored > 0 then
+    vim.notify(restored .. " terminal(s) restored", vim.log.levels.INFO)
+  end
+end
+
+-- ======================
+-- CLEANUP OLD SESSIONS
+-- ======================
+function M.cleanup(max_count)
+  max_count = max_count or 50
+  local dir = get_data_dir()
+  if vim.fn.isdirectory(dir) == 0 then
+    return
+  end
+
+  local files = vim.fn.readdir(dir)
+  local mpack_files = {}
+
+  for _, file in ipairs(files) do
+    if file:match("^term_%d+_%d+%.mpack$") then
+      table.insert(mpack_files, file)
+    end
+  end
+
+  -- Sort by name (which includes timestamp, so oldest first)
+  table.sort(mpack_files)
+
+  -- Remove oldest files beyond the limit
+  while #mpack_files > max_count do
+    local oldest = table.remove(mpack_files, 1)
+    os.remove(dir .. oldest)
+  end
+end
+
+
 return M
