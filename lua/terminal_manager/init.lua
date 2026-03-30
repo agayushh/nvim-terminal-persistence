@@ -1,5 +1,7 @@
 local M = {}
 
+math.randomseed(os.time() + vim.fn.getpid())
+
 local function get_data_dir()
   return vim.fn.stdpath("state") .. "/term/"
 end
