@@ -1,7 +1,7 @@
 local M = {}
 
 local function get_data_dir()
-  return vim.fn.stdpath("data") .. "/term/"
+  return vim.fn.stdpath("state") .. "/term/"
 end
 
 -- ======================
@@ -15,16 +15,8 @@ function M.save()
     return
   end
 
-  local line_count = vim.api.nvim_buf_line_count(buf)
-  local lines = {}
-
-  for i = 1, line_count do
-    local l = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    if l then
-      table.insert(lines, l)
-    end
-  end
-
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  
   if #lines == 0 then
     vim.notify("No terminal content to save", vim.log.levels.WARN)
     return
@@ -139,7 +131,7 @@ end
 
 
 -- ======================
--- REPLAY TERMINAL OUTPUT
+-- RESTORE INTO A REAL TERMINAL BUFFER
 -- ======================
 function M.restore_terminal(filename)
   if not filename or not filename:match("^term_%d+") then
