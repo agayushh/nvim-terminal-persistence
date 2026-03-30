@@ -7,7 +7,7 @@ end
 -- ======================
 -- SAVE TERMINAL OUTPUT
 -- ======================
-function M.save()
+function M.save(bufnr)
 
   -- Support both :TerminalSave (no arg) and autocmd (buf passed)
   if type(bufnr) == "table" then
@@ -15,7 +15,7 @@ function M.save()
   end
   local buf = bufnr or vim.api.nvim_get_current_buf()
 
-  if vim.bo.buftype ~= "terminal" then
+  if vim.bo[buf].buftype ~= "terminal" then
     vim.notify("Not a terminal buffer", vim.log.levels.WARN)
     return
   end
@@ -194,7 +194,7 @@ function M.restore_terminal(filename)
   vim.api.nvim_chan_send(chan, "\r\n\027[90m[Restored from session]\027[0m\r\n")
 
   -- Set buffer name to original URI if available
-  if data.uri then
+  if data.uri and data.uri ~= "" then
     pcall(vim.api.nvim_buf_set_name, buf, data.uri .. "#restored")
   end
 

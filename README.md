@@ -28,8 +28,9 @@ Data fed via `nvim_chan_send()` flows through the terminal emulator and produces
 | `:TerminalSave` | Save current terminal buffer |
 | `:TerminalSaveAll` | Save all open terminal buffers |
 | `:TerminalRestore <id>` | Restore a specific saved session |
+| `:TerminalRestoreAll` | Restore all saved sessions at once |
 | `:TerminalList` | Browse and restore saved sessions |
-
+| `:TerminalCleanup [max]` | Remove oldest sessions beyond limit (default: 50) |
 ## Design Decisions
 
 - **`stdpath("state")/term/`** — matches justinmk's spec: *"Similar to undo/swap/backup directories"*
